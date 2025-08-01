@@ -33,9 +33,26 @@
             color: #ffff00;
         }
         #gameCanvas {
-            border: 2px solid #fff; /* 改良: 枠色を明るく */
+            border: 2px solid #fff;
             box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            position: relative;
         }
+        /* タッチエリア用 */
+        .touchArea {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none; /* デフォルトは無効 */
+        }
+        #touchLeft, #touchCenter, #touchRight, #touchTop {
+            position: absolute;
+            z-index: 10;
+            pointer-events: auto;
+        }
+        #touchLeft   { left: 0;    top: 0; width: 34%; height: 100%; }
+        #touchCenter { left: 34%;  top: 0; width: 32%; height: 100%; }
+        #touchRight  { left: 66%;  top: 0; width: 34%; height: 100%; }
+        #touchTop    { left: 0;    top: 0; width: 100%; height: 20%; z-index: 11;}
         #restartBtn {
             display: none;
             margin: 20px;
@@ -57,9 +74,14 @@
 <body>
     <h1>🚀 SIMPLE GALAGA 🚀</h1>
     <div class="controls">
-        <p>Use ARROW KEYS to move • SPACEBAR to shoot • P to pause</p>
+        <p id="controlsText">Use ARROW KEYS to move • SPACEBAR to shoot • P to pause</p>
     </div>
-    <div id="gameCanvas"></div>
+    <div id="gameCanvas">
+        <div id="touchLeft"></div>
+        <div id="touchCenter"></div>
+        <div id="touchRight"></div>
+        <div id="touchTop"></div>
+    </div>
     <div class="score">
         <span id="scoreDisplay">Score: 0</span> | 
         <span id="livesDisplay">Lives: 3</span> | 
@@ -67,6 +89,14 @@
     </div>
     <button id="restartBtn" onclick="restartGame()">Restart</button>
     <script>
+        // --- スマホ用操作説明切替 ---
+        window.addEventListener('DOMContentLoaded', () => {
+            if (/iPhone|Android.+Mobile|Windows Phone/.test(navigator.userAgent)) {
+                document.getElementById('controlsText').textContent =
+                  '画面左右タップで移動 • 中央タップでショット • 上部タップで一時停止';
+            }
+        });
+
         // --- ゲーム変数 ---
         let player;
         let bullets = [];
@@ -81,6 +111,10 @@
         let isPaused = false;
         let stars = [];
 
+        // タッチ操作フラグ
+        let touchMoveLeft = false;
+        let touchMoveRight = false;
+
         // --- プレイヤークラス ---
         class Player {
             constructor(x, y) {
@@ -91,6 +125,10 @@
                 this.speed = 5;
             }
             update() {
+                // タッチ操作優先
+                if (touchMoveLeft && this.x > 0) this.x -= this.speed;
+                if (touchMoveRight && this.x < width - this.width) this.x += this.speed;
+                // キーボード操作も残す
                 if (keyIsDown(LEFT_ARROW) && this.x > 0) this.x -= this.speed;
                 if (keyIsDown(RIGHT_ARROW) && this.x < width - this.width) this.x += this.speed;
             }
@@ -99,8 +137,8 @@
                 stroke(0, 200, 0);
                 strokeWeight(2);
                 triangle(this.x + this.width/2, this.y,
-                        this.x, this.y + this.height,
-                        this.x + this.width, this.y + this.height);
+                         this.x, this.y + this.height,
+                         this.x + this.width, this.y + this.height);
                 fill(255, 255, 0, 150);
                 noStroke();
                 ellipse(this.x + this.width/2, this.y + this.height + 5, 8, 8);
@@ -181,12 +219,44 @@
             player = new Player(width/2 - 20, height - 60);
             generateStars();
             spawnEnemyWave();
+            setupTouchControls();
+        }
+
+        // タッチエリア初期化
+        function setupTouchControls() {
+            const left = document.getElementById('touchLeft');
+            const center = document.getElementById('touchCenter');
+            const right = document.getElementById('touchRight');
+            const top = document.getElementById('touchTop');
+
+            // 左
+            left.addEventListener('touchstart', (e) => { touchMoveLeft = true; e.preventDefault(); });
+            left.addEventListener('touchend',   (e) => { touchMoveLeft = false; e.preventDefault(); });
+            left.addEventListener('touchcancel',(e) => { touchMoveLeft = false; e.preventDefault(); });
+
+            // 右
+            right.addEventListener('touchstart', (e) => { touchMoveRight = true; e.preventDefault(); });
+            right.addEventListener('touchend',   (e) => { touchMoveRight = false; e.preventDefault(); });
+            right.addEventListener('touchcancel',(e) => { touchMoveRight = false; e.preventDefault(); });
+
+            // ショット
+            center.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (gameState === 'playing' && !isPaused) player.shoot();
+            });
+
+            // ポーズ
+            top.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                isPaused = !isPaused;
+                if (isPaused) { noLoop(); } else { loop(); }
+            });
         }
 
         // --- ウィンドウリサイズ対応 ---
         function windowResized() {
             resizeCanvas(windowWidth * 0.95, windowHeight * 0.7);
-            generateStars(); // スター再生成
+            generateStars();
         }
 
         // --- 描画ループ ---
@@ -258,7 +328,6 @@
                 }
             }
         }
-
         function spawnEnemy() {
             let x = random(0, width - 30);
             enemies.push(new Enemy(x, 0));
