@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A simple version of the Galaga game built with HTML and JavaScript." />
     <title>Simple Galaga</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
     <style>
@@ -17,34 +18,46 @@
             align-items: center;
             min-height: 100vh;
         }
-        
         h1 {
             margin: 0 0 20px 0;
             color: #00ff00;
             text-shadow: 0 0 10px #00ff00;
         }
-        
         .controls {
             margin-bottom: 10px;
             text-align: center;
         }
-        
         .score {
             margin-top: 10px;
             font-size: 18px;
             color: #ffff00;
         }
-        
         #gameCanvas {
-            border: 2px solid #333;
+            border: 2px solid #fff; /* 改良: 枠色を明るく */
             box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        }
+        #restartBtn {
+            display: none;
+            margin: 20px;
+            padding: 10px 32px;
+            font-size: 18px;
+            background: #222;
+            color: #fff;
+            border: 2px solid #fff;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #restartBtn:hover {
+            background: #333;
+            color: #0f0;
+            border-color: #0f0;
         }
     </style>
 </head>
 <body>
     <h1>🚀 SIMPLE GALAGA 🚀</h1>
     <div class="controls">
-        <p>Use ARROW KEYS to move • SPACEBAR to shoot</p>
+        <p>Use ARROW KEYS to move • SPACEBAR to shoot • P to pause</p>
     </div>
     <div id="gameCanvas"></div>
     <div class="score">
@@ -52,8 +65,9 @@
         <span id="livesDisplay">Lives: 3</span> | 
         <span id="levelDisplay">Level: 1</span>
     </div>
-
+    <button id="restartBtn" onclick="restartGame()">Restart</button>
     <script>
+        // --- ゲーム変数 ---
         let player;
         let bullets = [];
         let enemies = [];
@@ -63,10 +77,11 @@
         let gameState = 'playing'; // 'playing', 'gameOver'
         let lastEnemySpawn = 0;
         let enemySpawnDelay = 2000; // 2 seconds
-
-        // --- Level system variables ---
         let level = 1;
+        let isPaused = false;
+        let stars = [];
 
+        // --- プレイヤークラス ---
         class Player {
             constructor(x, y) {
                 this.x = x;
@@ -75,64 +90,50 @@
                 this.height = 30;
                 this.speed = 5;
             }
-            
             update() {
-                // Movement
-                if (keyIsDown(LEFT_ARROW) && this.x > 0) {
-                    this.x -= this.speed;
-                }
-                if (keyIsDown(RIGHT_ARROW) && this.x < width - this.width) {
-                    this.x += this.speed;
-                }
+                if (keyIsDown(LEFT_ARROW) && this.x > 0) this.x -= this.speed;
+                if (keyIsDown(RIGHT_ARROW) && this.x < width - this.width) this.x += this.speed;
             }
-            
             display() {
                 fill(0, 255, 0);
                 stroke(0, 200, 0);
                 strokeWeight(2);
-                // Draw player ship
                 triangle(this.x + this.width/2, this.y,
                         this.x, this.y + this.height,
                         this.x + this.width, this.y + this.height);
-                // Engine glow
                 fill(255, 255, 0, 150);
                 noStroke();
                 ellipse(this.x + this.width/2, this.y + this.height + 5, 8, 8);
             }
-            
             shoot() {
                 bullets.push(new Bullet(this.x + this.width/2, this.y, -8, color(0, 255, 255)));
             }
         }
-        
+
+        // --- 敵クラス ---
         class Enemy {
             constructor(x, y) {
                 this.x = x;
                 this.y = y;
                 this.width = 30;
                 this.height = 25;
-                this.speed = 2 + level * 0.3; // speed up as level increases
+                this.speed = 2 + level * 0.3;
                 this.direction = 1;
                 this.lastShot = millis();
-                // Make enemies shoot more as level increases
                 this.shootDelay = random(Math.max(400, 2000 - level * 100), Math.max(1000, 5000 - level * 200));
             }
-            
             update() {
                 this.x += this.speed * this.direction;
-                // Bounce off walls
                 if (this.x <= 0 || this.x >= width - this.width) {
                     this.direction *= -1;
                     this.y += 20;
                 }
-                // Random shooting
                 if (millis() - this.lastShot > this.shootDelay) {
                     this.shoot();
                     this.lastShot = millis();
                     this.shootDelay = random(Math.max(400, 2000 - level * 100), Math.max(1000, 5000 - level * 200));
                 }
             }
-            
             display() {
                 fill(255, 0, 0);
                 stroke(200, 0, 0);
@@ -147,12 +148,12 @@
                 line(this.x + 8, this.y, this.x + 5, this.y - 8);
                 line(this.x + 22, this.y, this.x + 25, this.y - 8);
             }
-            
             shoot() {
                 enemyBullets.push(new Bullet(this.x + this.width/2, this.y + this.height, 6 + level * 0.2, color(255, 0, 0)));
             }
         }
-        
+
+        // --- 弾クラス ---
         class Bullet {
             constructor(x, y, speed, bulletColor) {
                 this.x = x;
@@ -162,11 +163,7 @@
                 this.width = 4;
                 this.height = 8;
             }
-            
-            update() {
-                this.y += this.speed;
-            }
-            
+            update() { this.y += this.speed; }
             display() {
                 fill(this.color);
                 noStroke();
@@ -174,52 +171,55 @@
                 fill(red(this.color), green(this.color), blue(this.color), 100);
                 ellipse(this.x, this.y, this.width * 2, this.height * 2);
             }
-            
-            isOffScreen() {
-                return this.y < 0 || this.y > height;
-            }
+            isOffScreen() { return this.y < 0 || this.y > height; }
         }
-        
+
+        // --- セットアップ ---
         function setup() {
-            let canvas = createCanvas(800, 600);
+            let canvas = createCanvas(windowWidth * 0.95, windowHeight * 0.7);
             canvas.parent('gameCanvas');
             player = new Player(width/2 - 20, height - 60);
+            generateStars();
             spawnEnemyWave();
         }
-        
+
+        // --- ウィンドウリサイズ対応 ---
+        function windowResized() {
+            resizeCanvas(windowWidth * 0.95, windowHeight * 0.7);
+            generateStars(); // スター再生成
+        }
+
+        // --- 描画ループ ---
         function draw() {
             background(0, 20, 40);
             drawStars();
+            if (isPaused) {
+                displayPause();
+                return;
+            }
             if (gameState === 'playing') {
                 player.update();
                 player.display();
                 for (let i = bullets.length - 1; i >= 0; i--) {
                     bullets[i].update();
                     bullets[i].display();
-                    if (bullets[i].isOffScreen()) {
-                        bullets.splice(i, 1);
-                    }
+                    if (bullets[i].isOffScreen()) bullets.splice(i, 1);
                 }
                 for (let i = enemyBullets.length - 1; i >= 0; i--) {
                     enemyBullets[i].update();
                     enemyBullets[i].display();
-                    if (enemyBullets[i].isOffScreen()) {
-                        enemyBullets.splice(i, 1);
-                    }
+                    if (enemyBullets[i].isOffScreen()) enemyBullets.splice(i, 1);
                 }
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     enemies[i].update();
                     enemies[i].display();
-                    if (enemies[i].y > height) {
-                        enemies.splice(i, 1);
-                    }
+                    if (enemies[i].y > height) enemies.splice(i, 1);
                 }
                 checkCollisions();
                 if (millis() - lastEnemySpawn > enemySpawnDelay) {
                     spawnEnemy();
                     lastEnemySpawn = millis();
                 }
-                // --- Advance level when all enemies are destroyed ---
                 if (enemies.length === 0 && millis() - lastEnemySpawn > 3000) {
                     level++;
                     spawnEnemyWave();
@@ -229,19 +229,25 @@
             }
             updateUI();
         }
-        
-        function drawStars() {
-            fill(255, 255, 255, 150);
-            noStroke();
-            for (let i = 0; i < 50; i++) {
-                let x = (i * 123) % width;
-                let y = (i * 456 + frameCount * 0.5) % height;
-                ellipse(x, y, 2, 2);
+
+        // --- スター（星）生成・描画 ---
+        function generateStars() {
+            stars = [];
+            for (let i = 0; i < 100; i++) {
+                stars.push({x: random(width), y: random(height)});
             }
         }
-        
+        function drawStars() {
+            stroke(255);
+            for (let star of stars) {
+                point(star.x, star.y);
+                star.y += 1;
+                if (star.y > height) star.y = 0;
+            }
+        }
+
+        // --- 敵ウェーブ出現 ---
         function spawnEnemyWave() {
-            // More rows/cols and faster enemies as level increases
             let rows = Math.min(3 + Math.floor(level / 2), 8);
             let cols = Math.min(8 + Math.floor(level / 2), 12);
             for (let row = 0; row < rows; row++) {
@@ -252,12 +258,13 @@
                 }
             }
         }
-        
+
         function spawnEnemy() {
             let x = random(0, width - 30);
             enemies.push(new Enemy(x, 0));
         }
-        
+
+        // --- 当たり判定 ---
         function checkCollisions() {
             // Player bullets vs enemies
             for (let i = bullets.length - 1; i >= 0; i--) {
@@ -275,9 +282,7 @@
                 if (collision(enemyBullets[i], player)) {
                     enemyBullets.splice(i, 1);
                     lives--;
-                    if (lives <= 0) {
-                        gameState = 'gameOver';
-                    }
+                    if (lives <= 0) gameState = 'gameOver';
                     break;
                 }
             }
@@ -286,21 +291,21 @@
                 if (collision(enemies[i], player)) {
                     enemies.splice(i, 1);
                     lives--;
-                    if (lives <= 0) {
-                        gameState = 'gameOver';
-                    }
+                    if (lives <= 0) gameState = 'gameOver';
                     break;
                 }
             }
         }
-        
+
+        // --- 矩形衝突判定 ---
         function collision(obj1, obj2) {
             return obj1.x < obj2.x + obj2.width &&
                    obj1.x + obj1.width > obj2.x &&
                    obj1.y < obj2.y + obj2.height &&
                    obj1.y + obj1.height > obj2.y;
         }
-        
+
+        // --- ゲームオーバー画面 ---
         function displayGameOver() {
             fill(255, 0, 0);
             textAlign(CENTER, CENTER);
@@ -309,28 +314,48 @@
             fill(255);
             textSize(24);
             text('Final Score: ' + score, width/2, height/2);
-            text('Press R to Restart', width/2, height/2 + 50);
+            text('Press R or click Restart', width/2, height/2 + 50);
+            showRestartButton();
         }
-        
+
+        // --- ポーズ画面 ---
+        function displayPause() {
+            fill(0, 255, 255, 180);
+            textAlign(CENTER, CENTER);
+            textSize(42);
+            text('PAUSED', width/2, height/2);
+        }
+
+        // --- UI更新 ---
         function updateUI() {
             document.getElementById('scoreDisplay').textContent = 'Score: ' + score;
             document.getElementById('livesDisplay').textContent = 'Lives: ' + lives;
             document.getElementById('levelDisplay').textContent = 'Level: ' + level;
         }
-        
+
+        // --- キー操作 ---
         function keyPressed() {
-            if (key === ' ' && gameState === 'playing') {
+            if ((key === ' ' || keyCode === 32) && gameState === 'playing' && !isPaused) {
                 player.shoot();
             }
             if (key === 'r' || key === 'R') {
                 restartGame();
             }
+            if (key === 'p' || key === 'P') {
+                isPaused = !isPaused;
+                if (isPaused) {
+                    noLoop();
+                } else {
+                    loop();
+                }
+            }
         }
-        
+
+        // --- 再スタート処理 ---
         function restartGame() {
             score = 0;
             lives = 3;
-            level = 1; // <--- Reset level
+            level = 1;
             gameState = 'playing';
             bullets = [];
             enemies = [];
@@ -338,6 +363,17 @@
             player = new Player(width/2 - 20, height - 60);
             spawnEnemyWave();
             lastEnemySpawn = millis();
+            isPaused = false;
+            loop();
+            hideRestartButton();
+        }
+
+        // --- 再スタートボタン表示切替 ---
+        function showRestartButton() {
+            document.getElementById('restartBtn').style.display = 'block';
+        }
+        function hideRestartButton() {
+            document.getElementById('restartBtn').style.display = 'none';
         }
     </script>
 </body>
