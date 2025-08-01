@@ -49,7 +49,8 @@
     <div id="gameCanvas"></div>
     <div class="score">
         <span id="scoreDisplay">Score: 0</span> | 
-        <span id="livesDisplay">Lives: 3</span>
+        <span id="livesDisplay">Lives: 3</span> | 
+        <span id="levelDisplay">Level: 1</span>
     </div>
 
     <script>
@@ -62,7 +63,10 @@
         let gameState = 'playing'; // 'playing', 'gameOver'
         let lastEnemySpawn = 0;
         let enemySpawnDelay = 2000; // 2 seconds
-        
+
+        // --- Level system variables ---
+        let level = 1;
+
         class Player {
             constructor(x, y) {
                 this.x = x;
@@ -86,12 +90,10 @@
                 fill(0, 255, 0);
                 stroke(0, 200, 0);
                 strokeWeight(2);
-                
                 // Draw player ship
                 triangle(this.x + this.width/2, this.y,
                         this.x, this.y + this.height,
                         this.x + this.width, this.y + this.height);
-                
                 // Engine glow
                 fill(255, 255, 0, 150);
                 noStroke();
@@ -109,26 +111,25 @@
                 this.y = y;
                 this.width = 30;
                 this.height = 25;
-                this.speed = 2;
+                this.speed = 2 + level * 0.3; // speed up as level increases
                 this.direction = 1;
                 this.lastShot = millis();
-                this.shootDelay = random(2000, 5000);
+                // Make enemies shoot more as level increases
+                this.shootDelay = random(Math.max(400, 2000 - level * 100), Math.max(1000, 5000 - level * 200));
             }
             
             update() {
                 this.x += this.speed * this.direction;
-                
                 // Bounce off walls
                 if (this.x <= 0 || this.x >= width - this.width) {
                     this.direction *= -1;
                     this.y += 20;
                 }
-                
                 // Random shooting
                 if (millis() - this.lastShot > this.shootDelay) {
                     this.shoot();
                     this.lastShot = millis();
-                    this.shootDelay = random(2000, 5000);
+                    this.shootDelay = random(Math.max(400, 2000 - level * 100), Math.max(1000, 5000 - level * 200));
                 }
             }
             
@@ -136,17 +137,11 @@
                 fill(255, 0, 0);
                 stroke(200, 0, 0);
                 strokeWeight(2);
-                
-                // Draw enemy body
                 rect(this.x, this.y, this.width, this.height);
-                
-                // Draw eyes
                 fill(255, 255, 0);
                 noStroke();
                 ellipse(this.x + 8, this.y + 8, 6, 6);
                 ellipse(this.x + 22, this.y + 8, 6, 6);
-                
-                // Draw antennae
                 stroke(255, 0, 0);
                 strokeWeight(2);
                 line(this.x + 8, this.y, this.x + 5, this.y - 8);
@@ -154,7 +149,7 @@
             }
             
             shoot() {
-                enemyBullets.push(new Bullet(this.x + this.width/2, this.y + this.height, 6, color(255, 0, 0)));
+                enemyBullets.push(new Bullet(this.x + this.width/2, this.y + this.height, 6 + level * 0.2, color(255, 0, 0)));
             }
         }
         
@@ -176,8 +171,6 @@
                 fill(this.color);
                 noStroke();
                 ellipse(this.x, this.y, this.width, this.height);
-                
-                // Add glow effect
                 fill(red(this.color), green(this.color), blue(this.color), 100);
                 ellipse(this.x, this.y, this.width * 2, this.height * 2);
             }
@@ -190,74 +183,50 @@
         function setup() {
             let canvas = createCanvas(800, 600);
             canvas.parent('gameCanvas');
-            
             player = new Player(width/2 - 20, height - 60);
-            
-            // Spawn initial enemies
             spawnEnemyWave();
         }
         
         function draw() {
             background(0, 20, 40);
-            
-            // Draw stars
             drawStars();
-            
             if (gameState === 'playing') {
-                // Update and display player
                 player.update();
                 player.display();
-                
-                // Update and display bullets
                 for (let i = bullets.length - 1; i >= 0; i--) {
                     bullets[i].update();
                     bullets[i].display();
-                    
                     if (bullets[i].isOffScreen()) {
                         bullets.splice(i, 1);
                     }
                 }
-                
-                // Update and display enemy bullets
                 for (let i = enemyBullets.length - 1; i >= 0; i--) {
                     enemyBullets[i].update();
                     enemyBullets[i].display();
-                    
                     if (enemyBullets[i].isOffScreen()) {
                         enemyBullets.splice(i, 1);
                     }
                 }
-                
-                // Update and display enemies
                 for (let i = enemies.length - 1; i >= 0; i--) {
                     enemies[i].update();
                     enemies[i].display();
-                    
-                    // Remove enemies that go too far down
                     if (enemies[i].y > height) {
                         enemies.splice(i, 1);
                     }
                 }
-                
-                // Check collisions
                 checkCollisions();
-                
-                // Spawn new enemies periodically
                 if (millis() - lastEnemySpawn > enemySpawnDelay) {
                     spawnEnemy();
                     lastEnemySpawn = millis();
                 }
-                
-                // Check if all enemies destroyed
+                // --- Advance level when all enemies are destroyed ---
                 if (enemies.length === 0 && millis() - lastEnemySpawn > 3000) {
+                    level++;
                     spawnEnemyWave();
                 }
-                
             } else if (gameState === 'gameOver') {
                 displayGameOver();
             }
-            
-            // Update score display
             updateUI();
         }
         
@@ -272,10 +241,13 @@
         }
         
         function spawnEnemyWave() {
-            for (let row = 0; row < 3; row++) {
-                for (let col = 0; col < 8; col++) {
-                    let x = col * 80 + 80;
-                    let y = row * 50 + 50;
+            // More rows/cols and faster enemies as level increases
+            let rows = Math.min(3 + Math.floor(level / 2), 8);
+            let cols = Math.min(8 + Math.floor(level / 2), 12);
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    let x = col * 60 + 60;
+                    let y = row * 40 + 40;
                     enemies.push(new Enemy(x, y));
                 }
             }
@@ -298,26 +270,22 @@
                     }
                 }
             }
-            
             // Enemy bullets vs player
             for (let i = enemyBullets.length - 1; i >= 0; i--) {
                 if (collision(enemyBullets[i], player)) {
                     enemyBullets.splice(i, 1);
                     lives--;
-                    
                     if (lives <= 0) {
                         gameState = 'gameOver';
                     }
                     break;
                 }
             }
-            
             // Enemies vs player
             for (let i = enemies.length - 1; i >= 0; i--) {
                 if (collision(enemies[i], player)) {
                     enemies.splice(i, 1);
                     lives--;
-                    
                     if (lives <= 0) {
                         gameState = 'gameOver';
                     }
@@ -338,7 +306,6 @@
             textAlign(CENTER, CENTER);
             textSize(48);
             text('GAME OVER', width/2, height/2 - 50);
-            
             fill(255);
             textSize(24);
             text('Final Score: ' + score, width/2, height/2);
@@ -348,13 +315,13 @@
         function updateUI() {
             document.getElementById('scoreDisplay').textContent = 'Score: ' + score;
             document.getElementById('livesDisplay').textContent = 'Lives: ' + lives;
+            document.getElementById('levelDisplay').textContent = 'Level: ' + level;
         }
         
         function keyPressed() {
             if (key === ' ' && gameState === 'playing') {
                 player.shoot();
             }
-            
             if (key === 'r' || key === 'R') {
                 restartGame();
             }
@@ -363,6 +330,7 @@
         function restartGame() {
             score = 0;
             lives = 3;
+            level = 1; // <--- Reset level
             gameState = 'playing';
             bullets = [];
             enemies = [];
